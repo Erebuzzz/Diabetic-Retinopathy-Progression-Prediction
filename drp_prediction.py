@@ -16,8 +16,16 @@ from pathlib import Path
 
 # DATASET PATHS
 base_dir = Path("c:/Users/kshit/OneDrive/Documents/GitHub/Diabetic-Retinopathy-Progression-Prediction/idrid")
-grading_dir = base_dir / "Disease Grading/Groundtruths"
-segmentation_dir = base_dir / "Segmentation/All Segmentations"
+grading_dir = base_dir / "Disease_Grading/Groundtruths"
+segmentation_dir = base_dir / "Segmentation/All_Segmentations"
+
+# Add this after defining the paths
+print(f"Base directory exists: {base_dir.exists()}")
+print(f"Grading directory exists: {grading_dir.exists()}")
+if grading_dir.exists():
+    print("Files in grading directory:")
+    for file in grading_dir.iterdir():
+        print(f"  - {file.name}")
 
 # Check if the paths exist
 """if not BASE_DIR.exists():
