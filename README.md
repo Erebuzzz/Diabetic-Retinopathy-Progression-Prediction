@@ -85,7 +85,7 @@ Early prediction of DR progression can help clinicians:
 
 ## Contributors
 
-- Erebuzzz
+- Erebus
 
 ## Acknowledgments
 
