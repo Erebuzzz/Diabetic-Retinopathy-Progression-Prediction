@@ -13,13 +13,13 @@ from sklearn.utils import class_weight
 import seaborn as sns
 from tqdm import tqdm
 
-# ----------------- DATASET PATHS -----------------
+# DATASET PATHS
 # Update these paths to where you've extracted the IDRiD dataset
 BASE_DIR = "/path/to/idrid"  # Change this to your actual path
 GRADING_DIR = os.path.join(BASE_DIR, "B. Disease Grading")
 SEGMENTATION_DIR = os.path.join(BASE_DIR, "A. Segmentation")
 
-# ----------------- HELPER FUNCTIONS -----------------
+# HELPER FUNCTIONS
 
 def extract_image_features(image_path):
     """Extract features from a retinal image."""
