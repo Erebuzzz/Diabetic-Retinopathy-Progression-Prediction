@@ -13,6 +13,7 @@ from sklearn.utils import class_weight
 import seaborn as sns
 from tqdm import tqdm
 from pathlib import Path
+from imblearn.over_sampling import SMOTE
 
 # DATASET PATHS
 base_dir = Path("c:/Users/kshit/OneDrive/Documents/GitHub/Diabetic-Retinopathy-Progression-Prediction/idrid")
@@ -166,6 +167,11 @@ def prepare_idrid_data(base_dir, grading_dir, segmentation_dir):
     train_labels = pd.read_csv(train_labels_path)
     test_labels = pd.read_csv(test_labels_path)
     
+    # Debug: Print column names
+    print("Train labels columns:", train_labels.columns.tolist())
+    print("Test labels columns:", test_labels.columns.tolist())
+    print("Train labels first row:", train_labels.iloc[0])
+    
     # Combine training and testing data for our purpose
     all_labels = pd.concat([train_labels, test_labels], ignore_index=True)
     
@@ -200,9 +206,31 @@ def prepare_idrid_data(base_dir, grading_dir, segmentation_dir):
             # Get the corresponding row from labels
             label_row = all_labels[all_labels['Image name'] == image_id].iloc[0]
             
-            # Add DR grade and Risk of DME
-            image_features['dr_grade'] = label_row['Retinopathy grade']
-            image_features['dme_risk'] = label_row['Risk of macular edema']
+            # Add DR grade and Risk of DME - with column name checking
+            if 'Retinopathy grade' in label_row:
+                image_features['dr_grade'] = label_row['Retinopathy grade']
+            elif 'DR grade' in label_row:
+                image_features['dr_grade'] = label_row['DR grade'] 
+            else:
+                # Get the first column that contains 'grade' (case insensitive)
+                grade_cols = [col for col in label_row.index if 'grade' in col.lower()]
+                if grade_cols:
+                    image_features['dr_grade'] = label_row[grade_cols[0]]
+                else:
+                    # If no grade column found, use a default value
+                    print(f"Warning: No DR grade column found for image {image_id}, using default value")
+                    image_features['dr_grade'] = 0
+
+            # Similar approach for DME risk
+            if 'Risk of macular edema' in label_row:
+                image_features['dme_risk'] = label_row['Risk of macular edema']
+            else:
+                dme_cols = [col for col in label_row.index if 'edema' in col.lower() or 'dme' in col.lower()]
+                if dme_cols:
+                    image_features['dme_risk'] = label_row[dme_cols[0]]
+                else:
+                    print(f"Warning: No DME risk column found for image {image_id}, using default value")
+                    image_features['dme_risk'] = 0
             
             # Add image ID
             image_features['image_id'] = image_id
@@ -312,9 +340,12 @@ def train_progression_model():
     
     # Update the classifier with class weights
     pipeline.steps[-1] = ('classifier', GradientBoostingClassifier(
-        random_state=42, 
-        class_weight=class_weight_dict
+        random_state=42
     ))
+    
+    # Apply SMOTE before training
+    smote = SMOTE(random_state=42)
+    X_train_resampled, y_train_resampled = smote.fit_resample(X_train, y_train)
     
     # 8. Perform grid search with cross-validation
     print("Performing grid search for hyperparameter tuning...")
@@ -328,10 +359,18 @@ def train_progression_model():
     )
     
     # 9. Train the model
-    grid_search.fit(X_train, y_train)
+    grid_search.fit(X_train_resampled, y_train_resampled)
     
     # 10. Get the best model
     best_model = grid_search.best_estimator_
+    
+    # After finding the best model
+    sample_weights = np.ones(len(y_train))
+    for i, val in enumerate(y_train):
+        sample_weights[i] = class_weight_dict[val]
+
+    # Retrain the best model with sample weights
+    best_model.fit(X_train, y_train, classifier__sample_weight=sample_weights)
     
     # 11. Make predictions
     y_pred = best_model.predict(X_test)
@@ -396,13 +435,79 @@ def train_progression_model():
     
     return best_model, X, y
 
+# Add this function after train_progression_model
+def visualize_dataset(features_df):
+    """Generate insightful visualizations of the dataset."""
+    print("Generating dataset visualizations...")
+    
+    # Create a directory for visualizations if it doesn't exist
+    vis_dir = Path("visualizations")
+    vis_dir.mkdir(exist_ok=True)
+    
+    # 1. Distribution of DR grades
+    plt.figure(figsize=(10, 6))
+    sns.countplot(x='dr_grade', data=features_df, palette='viridis')
+    plt.title('Distribution of DR Grades in Dataset', fontsize=14)
+    plt.xlabel('DR Grade', fontsize=12)
+    plt.ylabel('Count', fontsize=12)
+    plt.xticks(ticks=range(5), labels=['None (0)', 'Mild (1)', 'Moderate (2)', 'Severe (3)', 'Proliferative (4)'])
+    plt.tight_layout()
+    plt.savefig(vis_dir / 'dr_grade_distribution.png')
+    
+    # 2. DME Risk distribution
+    plt.figure(figsize=(10, 6))
+    sns.countplot(x='dme_risk', data=features_df, palette='rocket')
+    plt.title('Distribution of DME Risk in Dataset', fontsize=14)
+    plt.xlabel('DME Risk', fontsize=12)
+    plt.ylabel('Count', fontsize=12)
+    plt.xticks(ticks=range(3), labels=['No Risk (0)', 'Moderate (1)', 'Severe (2)'])
+    plt.tight_layout()
+    plt.savefig(vis_dir / 'dme_risk_distribution.png')
+    
+    # 3. Relationship between DR grade and simulated progression probability
+    plt.figure(figsize=(10, 6))
+    sns.boxplot(x='dr_grade', y='progression_prob', data=features_df, palette='viridis')
+    plt.title('Progression Probability by DR Grade', fontsize=14)
+    plt.xlabel('DR Grade', fontsize=12)
+    plt.ylabel('Progression Probability', fontsize=12)
+    plt.xticks(ticks=range(5), labels=['None (0)', 'Mild (1)', 'Moderate (2)', 'Severe (3)', 'Proliferative (4)'])
+    plt.tight_layout()
+    plt.savefig(vis_dir / 'progression_by_grade.png')
+    
+    # 4. Correlation heatmap of key features
+    plt.figure(figsize=(14, 12))
+    feature_cols = [col for col in features_df.columns if any(s in col for s in 
+                    ['_presence', '_area', '_count', 'mean', 'std', 'dr_grade', 'dme_risk', 'progression'])]
+    feature_cols = feature_cols[:15]  # Limit to 15 features for readability
+    corr = features_df[feature_cols].corr()
+    mask = np.triu(np.ones_like(corr, dtype=bool))
+    sns.heatmap(corr, mask=mask, annot=True, cmap='coolwarm', fmt=".2f", linewidths=.5)
+    plt.title('Feature Correlation Heatmap', fontsize=14)
+    plt.tight_layout()
+    plt.savefig(vis_dir / 'feature_correlation.png')
+    
+    print(f"Visualizations saved to {vis_dir.resolve()}")
+
+# Call this in your main execution block
+# Add to the if __name__ == "__main__" block:
 if __name__ == "__main__":
-    # Make sure to update the dataset paths at the top of this file
+    # ...existing code...
     if not base_dir.exists():
         print(f"Error: Dataset directory {base_dir} not found.")
         print("Please update the BASE_DIR variable with the correct path.")
     else:
         try:
+            # Prepare dataset
+            features_df = prepare_idrid_data(base_dir, grading_dir, segmentation_dir)
+            features_df = simulate_progression_data(features_df)
+            
+            # Save processed features for later use
+            features_df.to_csv('processed_features.csv')
+            
+            # Generate visualizations
+            visualize_dataset(features_df)
+            
+            # Train model
             model, X, y = train_progression_model()
         except Exception as e:
             print(f"An error occurred: {str(e)}")
