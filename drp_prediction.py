@@ -12,19 +12,27 @@ from sklearn.metrics import classification_report, confusion_matrix, roc_auc_sco
 from sklearn.utils import class_weight
 import seaborn as sns
 from tqdm import tqdm
+from pathlib import Path
 
 # DATASET PATHS
-# Update these paths to where you've extracted the IDRiD dataset
-BASE_DIR = "/path/to/idrid"  # Change this to your actual path
-GRADING_DIR = os.path.join(BASE_DIR, "B. Disease Grading")
-SEGMENTATION_DIR = os.path.join(BASE_DIR, "A. Segmentation")
+base_dir = Path("c:/Users/kshit/OneDrive/Documents/GitHub/Diabetic-Retinopathy-Progression-Prediction/idrid")
+grading_dir = base_dir / "Disease Grading/Groundtruths"
+segmentation_dir = base_dir / "Segmentation/All Segmentations"
+
+# Check if the paths exist
+"""if not BASE_DIR.exists():
+    raise FileNotFoundError(f"Base directory {BASE_DIR} not found.")
+if not GRADING_DIR.exists():
+    raise FileNotFoundError(f"Grading directory {GRADING_DIR} not found.")
+if not SEGMENTATION_DIR.exists():
+    raise FileNotFoundError(f"Segmentation directory {SEGMENTATION_DIR} not found.")"""
 
 # HELPER FUNCTIONS
 
 def extract_image_features(image_path):
     """Extract features from a retinal image."""
     # Read image
-    img = cv2.imread(image_path)
+    img = cv2.imread(str(image_path))
     if img is None:
         raise ValueError(f"Could not read image at {image_path}")
     
@@ -75,17 +83,17 @@ def calculate_lesion_metrics(image_id, segmentation_dir):
     
     # Define the lesion types and their corresponding directories
     lesion_types = {
-        'microaneurysms': '1. Microaneurysms',
-        'hemorrhages': '2. Haemorrhages',
-        'hard_exudates': '3. Hard Exudates',
-        'soft_exudates': '4. Soft Exudates',
-        'optic_disc': '5. Optic Disc'
+        'microaneurysms': 'Microaneurysms',
+        'hemorrhages': 'Haemorrhages',
+        'hard_exudates': 'Hard Exudates',
+        'soft_exudates': 'Soft Exudates',
+        'optic_disc': 'Optic Disc'
     }
     
     for lesion, subdir in lesion_types.items():
         # Find the corresponding mask
-        mask_pattern = os.path.join(segmentation_dir, subdir, f"{image_id}*")
-        mask_paths = glob(mask_pattern)
+        mask_pattern = segmentation_dir / 'Training Set' / subdir / f"{image_id}*"
+        mask_paths = glob(str(mask_pattern))
         
         if mask_paths:
             # Read the mask
@@ -139,8 +147,16 @@ def prepare_idrid_data(base_dir, grading_dir, segmentation_dir):
     """Prepare features and targets from the IDRiD dataset."""
     
     # Read the grading CSV files
-    train_labels = pd.read_csv(os.path.join(grading_dir, 'a. Training Set', 'train.csv'))
-    test_labels = pd.read_csv(os.path.join(grading_dir, 'b. Testing Set', 'test.csv'))
+    train_labels_path = grading_dir / 'IDRiD_Disease_Grading_Training_Labels.csv'
+    test_labels_path = grading_dir / 'IDRiD_Disease_Grading_Testing_Labels.csv'
+    
+    if not train_labels_path.exists():
+        raise FileNotFoundError(f"Training labels file {train_labels_path} not found.")
+    if not test_labels_path.exists():
+        raise FileNotFoundError(f"Testing labels file {test_labels_path} not found.")
+    
+    train_labels = pd.read_csv(train_labels_path)
+    test_labels = pd.read_csv(test_labels_path)
     
     # Combine training and testing data for our purpose
     all_labels = pd.concat([train_labels, test_labels], ignore_index=True)
@@ -158,12 +174,12 @@ def prepare_idrid_data(base_dir, grading_dir, segmentation_dir):
     print("Extracting features from images...")
     for image_id in tqdm(image_ids):
         # Find the image path (first check training, then testing)
-        train_path = os.path.join(grading_dir, 'a. Training Set', 'Images', f"{image_id}.jpg")
-        test_path = os.path.join(grading_dir, 'b. Testing Set', 'Images', f"{image_id}.jpg")
+        train_path = base_dir / 'Original Images' / 'Training Set' / f"{image_id}.jpg"
+        test_path = base_dir / 'Original Images' / 'Testing Set' / f"{image_id}.jpg"
         
-        if os.path.exists(train_path):
+        if train_path.exists():
             image_path = train_path
-        elif os.path.exists(test_path):
+        elif test_path.exists():
             image_path = test_path
         else:
             print(f"Warning: Image {image_id} not found, skipping")
@@ -184,8 +200,8 @@ def prepare_idrid_data(base_dir, grading_dir, segmentation_dir):
             image_features['image_id'] = image_id
             
             # Check if this image has segmentation masks
-            segmentation_image_path = os.path.join(segmentation_dir, 'Original Images', 'Training', f"{image_id}.jpg")
-            if os.path.exists(segmentation_image_path):
+            segmentation_image_path = segmentation_dir / 'Training Set' / f"{image_id}.jpg"
+            if segmentation_image_path.exists():
                 # Calculate lesion metrics from segmentation masks
                 lesion_metrics = calculate_lesion_metrics(image_id, segmentation_dir)
                 # Add to image features
@@ -249,7 +265,7 @@ def train_progression_model():
     
     # 1. Prepare the dataset
     print("Preparing the IDRiD dataset...")
-    features_df = prepare_idrid_data(BASE_DIR, GRADING_DIR, SEGMENTATION_DIR)
+    features_df = prepare_idrid_data(base_dir, grading_dir, segmentation_dir)
     
     # 2. Simulate progression data (in a real implementation, you'd use actual follow-up data)
     print("Simulating progression data...")
@@ -374,8 +390,8 @@ def train_progression_model():
 
 if __name__ == "__main__":
     # Make sure to update the dataset paths at the top of this file
-    if not os.path.exists(BASE_DIR):
-        print(f"Error: Dataset directory {BASE_DIR} not found.")
+    if not base_dir.exists():
+        print(f"Error: Dataset directory {base_dir} not found.")
         print("Please update the BASE_DIR variable with the correct path.")
     else:
         try:
