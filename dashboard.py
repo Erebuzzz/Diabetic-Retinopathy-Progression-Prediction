@@ -780,7 +780,7 @@ def main():
         """)
         
         st.markdown("---")
-        st.markdown("**Developed by:** Erebuzzz")
+        st.markdown("**Developed by:** Erebus")
         st.markdown("**Contact:** kshitiz23kumar@gmail.com")
         st.markdown("**GitHub:** [Project Repository](https://github.com/Erebuzzz/Diabetic-Retinopathy-Progression-Prediction)")
 
